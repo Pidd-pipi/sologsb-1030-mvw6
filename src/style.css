@@ -132,3 +132,10 @@ kbd { border: 1px solid var(--gray-a7); border-bottom-width: 2px; border-radius:
   .content-page { max-width: none; padding: 0; }
   .print-sheet { border: 0; box-shadow: none; border-radius: 0; padding: 0; }
 }
+
+.merge-dialog .rt-Grid { margin-top: 12px; }
+.merge-conflict-group { display: grid; gap: 10px; margin-top: 14px; }
+.merge-conflict-card { border-left: 3px solid var(--amber-9); }
+.merge-conflict-card:has(.rt-Badge[color='red']) { border-left-color: var(--red-9); }
+.merge-radio { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.merge-radio input { accent-color: var(--accent-9); }

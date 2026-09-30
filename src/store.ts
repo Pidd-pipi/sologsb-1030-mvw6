@@ -98,14 +98,14 @@ export function useChecklistStore() {
 
   const addStage = useCallback(() => {
     commit((project) => {
-      project.stages.push({ id: uid('stage'), name: '新飞行阶段', order: project.stages.length, description: '描述阶段目标和适用条件。' });
+      project.stages.push({ id: uid('stage'), name: '新飞行阶段', order: project.stages.length, description: '描述阶段目标和适用条件。', updatedAt: now() });
     });
   }, [commit]);
 
   const updateStage = useCallback((stageId: string, patch: Partial<FlightStage>) => {
     commit((project) => {
       const stage = project.stages.find((entry) => entry.id === stageId);
-      if (stage) Object.assign(stage, patch);
+      if (stage) Object.assign(stage, patch, { updatedAt: now() });
     });
   }, [commit]);
 
@@ -216,6 +216,60 @@ export function useChecklistStore() {
     });
   }, [directUpdate]);
 
+  const createOfflineCopy = useCallback((editorName: string) => {
+    setState((current) => {
+      const source = current.projects.find((entry) => entry.id === current.selectedProjectId);
+      if (!source) return current;
+      past.current = [...past.current.slice(-39), clone(current)];
+      future.current = [];
+      forceHistoryState((value) => value + 1);
+      const copy: ChecklistProject = {
+        id: uid('project'),
+        name: `${source.name} · ${editorName.trim() || '离线副本'}`,
+        aircraft: source.aircraft,
+        revision: 1,
+        status: 'draft',
+        updatedAt: now(),
+        reviewNote: '',
+        stages: clone(source.stages),
+        items: clone(source.items),
+        revisions: [],
+        mergeBase: { stages: clone(source.stages), items: clone(source.items) }
+      };
+      const next = clone(current);
+      next.projects.push(copy);
+      next.selectedProjectId = copy.id;
+      return next;
+    });
+  }, []);
+
+  const deleteOfflineCopy = useCallback((projectId: string) => {
+    setState((current) => {
+      if (projectId === current.selectedProjectId) return current;
+      const next = clone(current);
+      next.projects = next.projects.filter((entry) => entry.id !== projectId);
+      return next;
+    });
+  }, []);
+
+  const applyMerge = useCallback((stages: FlightStage[], items: ChecklistItem[]) => {
+    setState((current) => {
+      if (!current.projects.some((entry) => entry.id === current.selectedProjectId)) return current;
+      past.current = [...past.current.slice(-39), clone(current)];
+      future.current = [];
+      forceHistoryState((value) => value + 1);
+      const next = clone(current);
+      const target = next.projects.find((entry) => entry.id === next.selectedProjectId);
+      if (!target) return current;
+      target.stages = clone(stages);
+      target.items = clone(items);
+      target.status = 'draft';
+      target.reviewNote = '';
+      target.updatedAt = now();
+      return next;
+    });
+  }, []);
+
   const undo = useCallback(() => {
     setState((current) => {
       const previous = past.current.pop();
@@ -261,6 +315,9 @@ export function useChecklistStore() {
     submitForReview,
     freezeRevision,
     createRevision,
+    createOfflineCopy,
+    deleteOfflineCopy,
+    applyMerge,
     undo,
     redo,
     saveNow

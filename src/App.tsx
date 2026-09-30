@@ -22,6 +22,8 @@ import {
   Tooltip
 } from '@radix-ui/themes';
 import { buildVersionOptions, diffVersions } from './diff';
+import { applyDangling, applyModifyDelete, detectDangling, threeWayMerge } from './merge';
+import type { MergeResolution } from './merge';
 import { useChecklistStore } from './store';
 import type { ChecklistItem, ChecklistProject, IssueLevel, ValidationIssue, WorkflowStatus } from './types';
 import { validateProject } from './validation';
@@ -59,6 +61,11 @@ function App() {
   const [leftVersion, setLeftVersion] = useState('current');
   const [rightVersion, setRightVersion] = useState(project.revisions[0]?.id ?? '');
   const [savePulse, setSavePulse] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyEditorName, setCopyEditorName] = useState('');
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeSourceId, setMergeSourceId] = useState('');
+  const [mergeResolutions, setMergeResolutions] = useState<Record<string, MergeResolution>>({});
   const challengeRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -195,6 +202,45 @@ function App() {
     }, 0);
   }
 
+  const offlineCopies = store.state.projects.filter((entry) => entry.id !== project.id && entry.mergeBase);
+
+  function getMergePreview() {
+    const source = store.state.projects.find((entry) => entry.id === mergeSourceId);
+    if (!source || !source.mergeBase) return null;
+    const result = threeWayMerge(
+      source.mergeBase.stages,
+      source.mergeBase.items,
+      project.stages,
+      project.items,
+      source.stages,
+      source.items
+    );
+    const afterModifyDelete = applyModifyDelete(result.items, result.conflicts, mergeResolutions);
+    const dangling = detectDangling(afterModifyDelete);
+    const finalItems = applyDangling(afterModifyDelete, dangling, mergeResolutions, result.deletedItemData, result.stages);
+    const remainingIssues = validateProject({ ...project, stages: result.stages, items: finalItems });
+    return { source, result, afterModifyDelete, dangling, finalItems, remainingIssues };
+  }
+
+  function setResolution(conflictId: string, resolution: MergeResolution) {
+    setMergeResolutions((current) => ({ ...current, [conflictId]: resolution }));
+  }
+
+  function handleApplyMerge() {
+    const preview = getMergePreview();
+    if (!preview) return;
+    store.applyMerge(preview.result.stages, preview.finalItems);
+    setMergeOpen(false);
+    setMergeSourceId('');
+    setMergeResolutions({});
+  }
+
+  function openMergeDialog() {
+    setMergeSourceId('');
+    setMergeResolutions({});
+    setMergeOpen(true);
+  }
+
   return (
     <Theme appearance={appearance} accentColor="blue" grayColor="slate" radius="large" scaling="100%">
       <div className="app-frame">
@@ -238,6 +284,8 @@ function App() {
             {project.status === 'draft' && <Button color="amber" onClick={store.submitForReview} disabled={errors > 0}>提交复核</Button>}
             {project.status === 'review' && <Button color="green" onClick={() => setFreezeOpen(true)} disabled={errors > 0}>复核通过并冻结</Button>}
             {project.status === 'frozen' && <Button onClick={store.createRevision}>创建修订 r{project.revision + 1}</Button>}
+            {project.status === 'draft' && <Button variant="soft" onClick={() => { setCopyEditorName(''); setCopyOpen(true); }}>创建离线副本</Button>}
+            {project.status === 'draft' && <Button variant="soft" onClick={openMergeDialog}>离线合并{offlineCopies.length > 0 ? `（${offlineCopies.length}）` : ''}</Button>}
             <Button variant="soft" onClick={() => setShowPreview(true)}>只读预览</Button>
             <Button variant="soft" onClick={() => window.print()}>打印</Button>
             <Button variant="soft" onClick={exportPrintableHtml}>导出打印版</Button>
@@ -460,6 +508,115 @@ function App() {
           <Dialog.Description size="2" color="gray">冻结后不可直接编辑，只能通过创建新修订继续修改。</Dialog.Description>
           <TextArea mt="4" value={freezeNote} onChange={(event) => setFreezeNote(event.target.value)} placeholder="复核意见或版本说明" />
           <Flex gap="3" justify="end" mt="4"><Dialog.Close><Button variant="soft">取消</Button></Dialog.Close><Button color="green" onClick={() => { store.freezeRevision(freezeNote); setFreezeOpen(false); setFreezeNote(''); }}>确认冻结</Button></Flex>
+        </Dialog.Content>
+      </Dialog.Root>
+
+      <Dialog.Root open={copyOpen} onOpenChange={setCopyOpen}>
+        <Dialog.Content maxWidth="460px">
+          <Dialog.Title>创建离线副本</Dialog.Title>
+          <Dialog.Description size="2" color="gray">以当前检查单为基线创建一份离线副本，交给另一位编辑员离线修改。重新连接后在“离线合并”中合并。</Dialog.Description>
+          <label style={{ display: 'block', marginTop: 16 }}>
+            <Text size="2" weight="bold" as="p">编辑员 / 副本名称</Text>
+            <TextField.Root value={copyEditorName} onChange={(event) => setCopyEditorName(event.target.value)} placeholder="如：值班员 B" />
+          </label>
+          <Flex gap="3" justify="end" mt="4"><Dialog.Close><Button variant="soft">取消</Button></Dialog.Close><Button onClick={() => { store.createOfflineCopy(copyEditorName); setCopyOpen(false); }}>创建并切换</Button></Flex>
+        </Dialog.Content>
+      </Dialog.Root>
+
+      <Dialog.Root open={mergeOpen} onOpenChange={setMergeOpen}>
+        <Dialog.Content maxWidth="780px" className="merge-dialog">
+          <Dialog.Title>离线合并</Dialog.Title>
+          <Dialog.Description size="2" color="gray">选择另一位编辑员的离线副本，与当前检查单按最后编辑时间进行三方合并。</Dialog.Description>
+          {offlineCopies.length === 0 ? (
+            <Callout.Root color="blue" mt="4">
+              <Callout.Text>还没有离线副本。先创建一份离线副本，两位编辑员各自离线修改后再合并。</Callout.Text>
+            </Callout.Root>
+          ) : (
+            <>
+              <label style={{ display: 'block', marginTop: 16 }}>
+                <Text size="2" weight="bold" as="p">对方离线副本</Text>
+                <Select.Root value={mergeSourceId} onValueChange={setMergeSourceId}>
+                  <Select.Trigger variant="soft" placeholder="选择要合并的离线副本" />
+                  <Select.Content position="popper">
+                    {offlineCopies.map((entry) => <Select.Item key={entry.id} value={entry.id}>{entry.name} · {entry.items.length} 项</Select.Item>)}
+                  </Select.Content>
+                </Select.Root>
+              </label>
+              {mergeSourceId && (
+                <Button size="1" color="red" variant="soft" mt="2" onClick={() => { store.deleteOfflineCopy(mergeSourceId); setMergeSourceId(''); }}>删除该离线副本</Button>
+              )}
+              {(() => {
+                const preview = getMergePreview();
+                if (!preview) return null;
+                const modifyDeleteConflicts = preview.result.conflicts.filter((conflict) => conflict.kind === 'modify-delete-item');
+                const danglingConflicts = preview.dangling;
+                const remainingErrors = preview.remainingIssues.filter((issue) => issue.level === 'error').length;
+                return (
+                  <>
+                    <Grid columns="3" gap="2" mt="3">
+                      <Card><Text size="1" color="gray">断开时基线</Text><Text size="2" weight="bold">{preview.source.mergeBase?.items.length ?? 0} 项</Text></Card>
+                      <Card><Text size="1" color="gray">当前（我方）</Text><Text size="2" weight="bold">{project.items.length} 项</Text></Card>
+                      <Card><Text size="1" color="gray">{preview.source.name}</Text><Text size="2" weight="bold">{preview.source.items.length} 项</Text></Card>
+                    </Grid>
+                    <Flex gap="2" mt="3" wrap="wrap">
+                      <Badge color="green">新增 {preview.result.addedItemIds.length}</Badge>
+                      <Badge color="red">删除 {preview.result.removedItemIds.length}</Badge>
+                      <Badge color="amber">修改 {preview.result.modifiedItemIds.length}</Badge>
+                      <Badge color="gray">阶段 {preview.result.stages.length} 个</Badge>
+                    </Flex>
+
+                    {modifyDeleteConflicts.length > 0 && (
+                      <div className="merge-conflict-group">
+                        <Text size="2" weight="bold" as="p" mt="4">删除 / 修改冲突（{modifyDeleteConflicts.length}）</Text>
+                        {modifyDeleteConflicts.map((conflict) => (
+                          <Card key={conflict.id} className="merge-conflict-card">
+                            <Badge color="amber">删除/修改</Badge>
+                            <Text size="2" weight="bold" as="p" mt="2">{conflict.title}</Text>
+                            <Text size="1" color="gray" as="p">{conflict.detail}</Text>
+                            <Flex gap="4" mt="2" wrap="wrap">
+                              <label className="merge-radio"><input type="radio" name={conflict.id} checked={(mergeResolutions[conflict.id] ?? conflict.defaultResolution) === 'keep-item'} onChange={() => setResolution(conflict.id, 'keep-item')} /> 保留修改后的检查项</label>
+                              <label className="merge-radio"><input type="radio" name={conflict.id} checked={(mergeResolutions[conflict.id] ?? conflict.defaultResolution) === 'delete-item'} onChange={() => setResolution(conflict.id, 'delete-item')} /> 按删除处理</label>
+                            </Flex>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+
+                    {danglingConflicts.length > 0 && (
+                      <div className="merge-conflict-group">
+                        <Text size="2" weight="bold" as="p" mt="4">悬挂前置条件（{danglingConflicts.length}）</Text>
+                        {danglingConflicts.map((conflict) => (
+                          <Card key={conflict.id} className="merge-conflict-card">
+                            <Badge color="red">前置条件悬空</Badge>
+                            <Text size="2" weight="bold" as="p" mt="2">{conflict.title}</Text>
+                            <Text size="1" color="gray" as="p">{conflict.detail}</Text>
+                            <Flex gap="4" mt="2" wrap="wrap">
+                              <label className="merge-radio"><input type="radio" name={conflict.id} checked={(mergeResolutions[conflict.id] ?? conflict.defaultResolution) === 'remove-precondition'} onChange={() => setResolution(conflict.id, 'remove-precondition')} /> 移除该前置条件</label>
+                              <label className="merge-radio"><input type="radio" name={conflict.id} checked={(mergeResolutions[conflict.id] ?? conflict.defaultResolution) === 'restore-item'} onChange={() => setResolution(conflict.id, 'restore-item')} /> 恢复被移除的检查项</label>
+                            </Flex>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+
+                    {remainingErrors > 0 ? (
+                      <Callout.Root color="red" mt="4">
+                        <Callout.Text>合并后仍有 {remainingErrors} 个阻断问题（{preview.remainingIssues.filter((issue) => issue.level === 'error').map((issue) => issue.title).join('、')}）。可先应用合并，再在编辑器中修复；未修复前不能提交复核。</Callout.Text>
+                      </Callout.Root>
+                    ) : modifyDeleteConflicts.length === 0 && danglingConflicts.length === 0 ? (
+                      <Callout.Root color="green" mt="4"><Callout.Text>合并结果无冲突，可直接应用。</Callout.Text></Callout.Root>
+                    ) : (
+                      <Callout.Root color="blue" mt="4"><Callout.Text>冲突已按默认选项处理，可调整后应用。应用后请在编辑器中复核前置条件可达性。</Callout.Text></Callout.Root>
+                    )}
+                  </>
+                );
+              })()}
+            </>
+          )}
+          <Flex gap="3" justify="end" mt="4">
+            <Dialog.Close><Button variant="soft">取消</Button></Dialog.Close>
+            <Button onClick={handleApplyMerge} disabled={!mergeSourceId || offlineCopies.length === 0}>应用合并结果</Button>
+          </Flex>
         </Dialog.Content>
       </Dialog.Root>
 

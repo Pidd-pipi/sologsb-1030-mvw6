@@ -7,6 +7,7 @@ export interface FlightStage {
   name: string;
   order: number;
   description: string;
+  updatedAt?: string;
 }
 
 export interface ChecklistItem {
@@ -42,6 +43,8 @@ export interface ChecklistProject {
   stages: FlightStage[];
   items: ChecklistItem[];
   revisions: ChecklistRevision[];
+  /** 离线合并基线：断开连接时的检查单快照，两位编辑员各自离线修改后用于三方合并。 */
+  mergeBase?: { stages: FlightStage[]; items: ChecklistItem[] };
 }
 
 export interface WorkspaceState {
