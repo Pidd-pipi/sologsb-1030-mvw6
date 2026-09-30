@@ -2,7 +2,7 @@ import type { ChecklistItem, ChecklistProject, ValidationIssue } from './types';
 
 const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en');
 
-export function validateProject(project: ChecklistProject): ValidationIssue[] {
+export function validateProject(project: Pick<ChecklistProject, 'stages' | 'items'>): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const stageById = new Map(project.stages.map((stage) => [stage.id, stage]));
   const itemById = new Map(project.items.map((item) => [item.id, item]));

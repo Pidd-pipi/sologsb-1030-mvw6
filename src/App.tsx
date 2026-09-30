@@ -23,7 +23,9 @@ import {
 } from '@radix-ui/themes';
 import { buildVersionOptions, diffVersions } from './diff';
 import { useChecklistStore } from './store';
-import type { ChecklistItem, ChecklistProject, IssueLevel, ValidationIssue, WorkflowStatus } from './types';
+import { downloadBranchPack, MergeDialog, SyncPanel } from './SyncPanel';
+import { buildMergedPack } from './merge';
+import type { ChecklistItem, ChecklistProject, IssueLevel, ProjectSnapshot, ValidationIssue, WorkflowStatus } from './types';
 import { validateProject } from './validation';
 
 const statusMeta: Record<WorkflowStatus, { label: string; color: 'gray' | 'amber' | 'green'; description: string }> = {
@@ -59,6 +61,7 @@ function App() {
   const [leftVersion, setLeftVersion] = useState('current');
   const [rightVersion, setRightVersion] = useState(project.revisions[0]?.id ?? '');
   const [savePulse, setSavePulse] = useState(false);
+  const [mergeRemote, setMergeRemote] = useState<{ editor: string; snapshot: ProjectSnapshot } | null>(null);
   const challengeRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -155,6 +158,12 @@ function App() {
     if (issue.stageId) setQuickStageId(issue.stageId);
   }
 
+  function exportMergedSnapshot(snapshot: ProjectSnapshot) {
+    const syncId = project.sync?.syncId ?? `sync-${project.id}`;
+    const pack = buildMergedPack(syncId, project.sync?.editor ?? '本机编辑', snapshot);
+    downloadBranchPack(pack);
+  }
+
   function exportPrintableHtml() {
     const stageOrder = project.stages.slice().sort((a, b) => a.order - b.order);
     const body = stageOrder.map((stage) => {
@@ -238,6 +247,7 @@ function App() {
             {project.status === 'draft' && <Button color="amber" onClick={store.submitForReview} disabled={errors > 0}>提交复核</Button>}
             {project.status === 'review' && <Button color="green" onClick={() => setFreezeOpen(true)} disabled={errors > 0}>复核通过并冻结</Button>}
             {project.status === 'frozen' && <Button onClick={store.createRevision}>创建修订 r{project.revision + 1}</Button>}
+            <Button variant="soft" onClick={() => { setActiveTab('sync'); }}>离线合并</Button>
             <Button variant="soft" onClick={() => setShowPreview(true)}>只读预览</Button>
             <Button variant="soft" onClick={() => window.print()}>打印</Button>
             <Button variant="soft" onClick={exportPrintableHtml}>导出打印版</Button>
@@ -248,6 +258,7 @@ function App() {
           <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
             <Tabs.List className="main-tabs">
               <Tabs.Trigger value="editor">编辑清单</Tabs.Trigger>
+              <Tabs.Trigger value="sync">离线合并</Tabs.Trigger>
               <Tabs.Trigger value="versions">版本差异 <Badge size="1" variant="soft">{project.revisions.length}</Badge></Tabs.Trigger>
               <Tabs.Trigger value="print">打印预览</Tabs.Trigger>
             </Tabs.List>
@@ -409,6 +420,17 @@ function App() {
               </div>
             </Tabs.Content>
 
+            <Tabs.Content value="sync">
+              <SyncPanel
+                project={project}
+                projects={store.state.projects}
+                onEditorChange={store.ensureSync}
+                onExportPack={store.exportBranchPack}
+                onImportPack={store.importBranchPack}
+                onStartMerge={(remote) => { setMergeRemote(remote); setActiveTab('sync'); }}
+              />
+            </Tabs.Content>
+
             <Tabs.Content value="versions">
               <div className="content-page">
                 <Heading size="7">版本差异</Heading>
@@ -478,6 +500,15 @@ function App() {
           <Flex justify="end" mt="4"><Dialog.Close><Button>了解了</Button></Dialog.Close></Flex>
         </Dialog.Content>
       </Dialog.Root>
+
+      <MergeDialog
+        open={mergeRemote !== null}
+        onOpenChange={(open) => { if (!open) setMergeRemote(null); }}
+        local={project}
+        remote={mergeRemote}
+        onApply={(snapshot) => store.applyMergeResult(snapshot)}
+        onExportMerged={exportMergedSnapshot}
+      />
     </Theme>
   );
 }

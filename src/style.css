@@ -132,3 +132,34 @@ kbd { border: 1px solid var(--gray-a7); border-bottom-width: 2px; border-radius:
   .content-page { max-width: none; padding: 0; }
   .print-sheet { border: 0; box-shadow: none; border-radius: 0; padding: 0; }
 }
+.sync-page { max-width: 980px; margin: 0 auto; padding: 22px 4px; display: grid; gap: 14px; }
+.sync-card { padding: 18px 20px; }
+.sync-field { display: grid; gap: 6px; min-width: 220px; }
+.sync-field span { font-size: 12px; font-weight: 700; }
+.sync-candidates { display: grid; gap: 9px; margin-top: 12px; }
+.sync-candidate { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border: 1px solid var(--gray-a5); border-radius: 12px; background: var(--gray-a2); }
+.sync-candidate strong { display: block; font-size: 13px; }
+.sync-candidate small { display: block; margin-top: 4px; color: var(--gray-10); font-size: 11px; }
+.sync-rules { margin: 12px 0 0; padding-left: 18px; display: grid; gap: 7px; color: var(--gray-11); font-size: 12.5px; }
+.merge-dialog { max-height: 92vh; overflow-y: auto; }
+.merge-body { display: grid; gap: 16px; margin-top: 16px; }
+.conflict-list { display: grid; gap: 10px; margin-top: 10px; }
+.conflict-card { border: 1px solid var(--red-a6); }
+.conflict-card.resolved { border-color: var(--green-a6); }
+.conflict-card.pending { background: var(--red-a2); }
+.conflict-options { display: grid; gap: 8px; margin-top: 10px; }
+.conflict-options label { display: grid; grid-template-columns: 20px 1fr; gap: 8px; padding: 9px 11px; border: 1px solid var(--gray-a5); border-radius: 10px; cursor: pointer; background: var(--color-panel); }
+.conflict-options label.chosen { border-color: var(--accent-a7); background: var(--accent-a3); }
+.conflict-options label strong { display: block; font-size: 12.5px; }
+.conflict-options label small { display: block; color: var(--gray-10); font-size: 11px; margin-top: 3px; }
+.merge-note-list { display: grid; gap: 7px; max-height: 190px; overflow: auto; padding-right: 4px; }
+.merge-note { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; padding: 6px 8px; border-radius: 8px; background: var(--gray-a2); }
+.merge-note span { min-width: 0; }
+.merge-issue-line { display: block; margin-top: 3px; font-size: 11.5px; }
+.merge-preview-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.merge-preview-stage { border: 1px solid var(--gray-a5); border-radius: 10px; padding: 10px 12px; background: var(--gray-a2); }
+.merge-preview-stage > strong { font-size: 12px; }
+.merge-preview-stage ol { margin: 7px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.merge-preview-stage li { font-size: 11.5px; }
+.merge-preview-stage li.has-error { color: var(--red-11); font-weight: 700; }
+.merge-preview-stage .critical-dot { color: var(--red-9); font-style: normal; margin-right: 2px; }

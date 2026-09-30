@@ -42,6 +42,36 @@ export interface ChecklistProject {
   stages: FlightStage[];
   items: ChecklistItem[];
   revisions: ChecklistRevision[];
+  sync?: ProjectSyncInfo;
+}
+
+export interface ProjectSyncInfo {
+  /** Shared by every offline branch of the same aircraft checklist. */
+  syncId: string;
+  /** Label of the editor who last saved this copy. */
+  editor: string;
+  /** Snapshot this copy branched from; the merge base for offline merges. */
+  baseSnapshot: ProjectSnapshot;
+}
+
+/** Revision-independent project shape exchanged by offline editors. */
+export interface ProjectSnapshot {
+  name: string;
+  aircraft: string;
+  updatedAt: string;
+  stages: FlightStage[];
+  items: ChecklistItem[];
+}
+
+/** File handed to another editor when working offline. */
+export interface OfflineBranchPack {
+  kind: 'flightline-branch';
+  packVersion: 1;
+  syncId: string;
+  editor: string;
+  exportedAt: string;
+  baseSnapshot: ProjectSnapshot;
+  snapshot: ProjectSnapshot;
 }
 
 export interface WorkspaceState {
@@ -71,4 +101,42 @@ export interface DiffEntry {
   stage: string;
   before: string;
   after: string;
+}
+
+export type MergeConflictKind = 'deleted-vs-edited' | 'deleted-vs-precondition';
+export type MergeResolution = 'keep' | 'delete';
+
+export interface MergeConflict {
+  id: string;
+  kind: MergeConflictKind;
+  itemId: string;
+  /** Side that removed the check item. */
+  deletedSide: 'local' | 'remote';
+  /** Side that still edits it / added the precondition. */
+  changedSide: 'local' | 'remote';
+  challenge: string;
+  detail: string;
+  /** Items whose new precondition still references the deleted one (deleted-vs-precondition). */
+  referrerIds: string[];
+}
+
+export interface MergeNote {
+  id: string;
+  kind: 'item-added' | 'item-removed' | 'field-lww' | 'precondition-set' | 'stage-added' | 'stage-removed' | 'metadata';
+  message: string;
+}
+
+export interface MergePlan {
+  base: ProjectSnapshot;
+  local: ProjectSnapshot;
+  remote: ProjectSnapshot;
+  remoteEditor: string;
+  conflicts: MergeConflict[];
+  notes: MergeNote[];
+}
+
+export interface MergeResult {
+  snapshot: ProjectSnapshot;
+  conflicts: MergeConflict[];
+  notes: MergeNote[];
 }

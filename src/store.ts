@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createInitialState } from './data';
-import type { ChecklistItem, ChecklistProject, ChecklistRevision, FlightStage, WorkspaceState } from './types';
+import { buildBranchPack, projectFromBranchPack, projectToSnapshot } from './merge';
+import type { ChecklistItem, ChecklistProject, ChecklistRevision, FlightStage, OfflineBranchPack, ProjectSnapshot, WorkspaceState } from './types';
 
 const STORAGE_KEY = 'sologsb-1030-workspace-v1';
 const clone = <T>(value: T): T => structuredClone(value);
@@ -216,6 +217,53 @@ export function useChecklistStore() {
     });
   }, [directUpdate]);
 
+  const ensureSync = useCallback((editor: string) => {
+    directUpdate((project) => {
+      if (!project.sync) {
+        project.sync = { syncId: uid('sync'), editor: editor.trim() || '本机编辑', baseSnapshot: projectToSnapshot(project) };
+      } else if (editor.trim()) {
+        project.sync.editor = editor.trim();
+      }
+    });
+  }, [directUpdate]);
+
+  const exportBranchPack = useCallback((): OfflineBranchPack => {
+    const editor = selectedProject.sync?.editor ?? '本机编辑';
+    return buildBranchPack(selectedProject, editor);
+  }, [selectedProject]);
+
+  const importBranchPack = useCallback((pack: OfflineBranchPack): string => {
+    const imported = projectFromBranchPack(pack);
+    setState((current) => {
+      past.current = [...past.current.slice(-39), clone(current)];
+      future.current = [];
+      forceHistoryState((value) => value + 1);
+      const next = clone(current);
+      next.projects.push(imported);
+      next.selectedProjectId = imported.id;
+      return next;
+    });
+    return imported.id;
+  }, []);
+
+  const applyMergeResult = useCallback((snapshot: ProjectSnapshot) => {
+    directUpdate((project) => {
+      project.name = snapshot.name;
+      project.aircraft = snapshot.aircraft;
+      project.stages = clone(snapshot.stages);
+      project.items = clone(snapshot.items);
+      project.updatedAt = now();
+      project.status = 'draft';
+      project.reviewNote = '';
+      project.sync = {
+        syncId: project.sync?.syncId ?? uid('sync'),
+        editor: project.sync?.editor ?? '本机编辑',
+        baseSnapshot: clone(snapshot)
+      };
+      // Frozen revisions keep their read-only snapshots and are never rewritten by a merge.
+    });
+  }, [directUpdate]);
+
   const undo = useCallback(() => {
     setState((current) => {
       const previous = past.current.pop();
@@ -261,6 +309,10 @@ export function useChecklistStore() {
     submitForReview,
     freezeRevision,
     createRevision,
+    ensureSync,
+    exportBranchPack,
+    importBranchPack,
+    applyMergeResult,
     undo,
     redo,
     saveNow
